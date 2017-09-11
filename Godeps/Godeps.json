@@ -18,6 +18,10 @@
 		{
 			"ImportPath": "golang.org/x/crypto/ssh",
 			"Rev": "81e90905daefcd6fd217b62423c0908922eadb30"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/ssh/agent",
+			"Rev": "81e90905daefcd6fd217b62423c0908922eadb30"
 		}
 	]
 }
