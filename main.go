@@ -57,50 +57,10 @@ func (gs *GitSpy) ServerPipe() io.WriteCloser {
 	return w
 }
 
-func (gs *GitSpy) Close() {
-	gs.c.Close()
-	gs.s.Close()
-}
-
 func NewGitSpy(client io.WriteCloser, server io.WriteCloser) *GitSpy {
 	gs := GitSpy{client, server}
 
 	return &gs
-}
-
-// Hacked version of io.copyBuffer to let us intercept
-func copySpy(dst io.Writer, src io.Reader, prefix string) (written int64, err error) {
-	buf := make([]byte, 32*1024)
-
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			log.Printf("%s: %s", prefix, buf[0:nr])
-
-			nw, ew := dst.Write(buf[0:nr])
-			if nw > 0 {
-				written += int64(nw)
-			}
-
-			if ew != nil {
-				err = ew
-				break
-			}
-
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-
-	return
 }
 
 func passwordCallback(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
@@ -172,7 +132,6 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 
 		log.Printf("Client copy complete")
 
-		gs.Close()
 		cp.Close()
 
 		return
@@ -191,33 +150,6 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 
 		return
 	}()
-
-	/*
-		for {
-			br := bufio.NewReader(stdout)
-			// TODO prefix
-			line, _, err := br.ReadLine()
-
-			if len(line) > 0 {
-				log.Printf("Stdout %s", line)
-				n, err = stdin.Write(line)
-				if n != len(line) {
-					log.Fatalf("TODO: partial write")
-				}
-				if err != nil {
-					return fmt.Errorf("Failed to write")
-				}
-			}
-
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("Failed to read: %v", err)
-
-				}
-				break
-			}
-		}
-	*/
 
 	serr := session.Wait()
 
