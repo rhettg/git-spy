@@ -32,6 +32,41 @@ func (gs *GitSpy) Read(p []byte) (n int, err error) {
 
 }
 
+// Hacked version of io.copyBuffer to let us intercept
+func copySpy(dst io.Writer, src io.Reader, prefix string) (written int64, err error) {
+	buf := make([]byte, 32*1024)
+
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			log.Printf("%s: %s", prefix, buf[0:nr])
+
+			nw, ew := dst.Write(buf[0:nr])
+			if nw > 0 {
+				written += int64(nw)
+			}
+
+			if ew != nil {
+				err = ew
+				break
+			}
+
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+
+	return
+}
+
 func passwordCallback(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 	//log.Printf("Checking password for %v", c)
 	return nil, nil
@@ -92,7 +127,8 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 
 	// If I didn't care about spying
 	go func() {
-		_, err := io.Copy(stdin, c)
+		//_, err := io.Copy(stdin, c)
+		_, err := copySpy(stdin, c, "C")
 		if err != nil && err != io.EOF {
 			log.Fatalf("Failed to Copy to stdin: %v", err)
 		}
