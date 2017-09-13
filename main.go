@@ -15,21 +15,57 @@ import (
 )
 
 type GitSpy struct {
-	// Server
-	s ssh.Session
-
-	// Client
-	c ssh.Channel
+	c io.WriteCloser
+	s io.WriteCloser
 }
 
-func (gs *GitSpy) Write(p []byte) (n int, err error) {
-	return
+func (gs *GitSpy) ClientPipe() io.WriteCloser {
+	r, w := io.Pipe()
 
+	go func() {
+		_, err := io.Copy(gs.s, r)
+		if err != nil && err != io.EOF {
+			r.CloseWithError(fmt.Errorf("Failed writing to server: %v", err))
+			return
+		}
+
+		log.Printf("ClientPipe exited, closing server")
+		gs.s.Close()
+
+		return
+	}()
+
+	return w
 }
 
-func (gs *GitSpy) Read(p []byte) (n int, err error) {
-	return
+func (gs *GitSpy) ServerPipe() io.WriteCloser {
+	r, w := io.Pipe()
 
+	go func() {
+		_, err := io.Copy(gs.c, r)
+		if err != nil && err != io.EOF {
+			r.CloseWithError(fmt.Errorf("Failed writing to client: %v", err))
+			return
+		}
+
+		log.Printf("ServerPipe exited, closing client")
+		gs.c.Close()
+
+		return
+	}()
+
+	return w
+}
+
+func (gs *GitSpy) Close() {
+	gs.c.Close()
+	gs.s.Close()
+}
+
+func NewGitSpy(client io.WriteCloser, server io.WriteCloser) *GitSpy {
+	gs := GitSpy{client, server}
+
+	return &gs
 }
 
 // Hacked version of io.copyBuffer to let us intercept
@@ -125,30 +161,33 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 		return fmt.Errorf("Failed to start command: %v", err)
 	}
 
-	// If I didn't care about spying
+	gs := NewGitSpy(c, stdin)
+
 	go func() {
-		//_, err := io.Copy(stdin, c)
-		_, err := copySpy(stdin, c, "C")
+		cp := gs.ClientPipe()
+		_, err := io.Copy(cp, c)
 		if err != nil && err != io.EOF {
-			log.Fatalf("Failed to Copy to stdin: %v", err)
+			log.Fatalf("Failed to Copy to client pipe: %v", err)
 		}
 
-		stdin.Close()
+		log.Printf("Client copy complete")
 
-		log.Printf("Closed stdin")
+		gs.Close()
+		cp.Close()
 
 		return
 	}()
 
 	go func() {
-		io.Copy(c, stdout)
+		sp := gs.ServerPipe()
+		_, err := io.Copy(sp, stdout)
 
 		if err != nil && err != io.EOF {
-			log.Fatalf("Failed to Copy to channel: %v", err)
+			log.Fatalf("Failed to Copy to server pipe: %v", err)
 		}
 
-		// c.Close()
-		log.Printf("Channel copy complete")
+		log.Printf("Server copy complete")
+		sp.Close()
 
 		return
 	}()
