@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -12,6 +13,24 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
+
+type GitSpy struct {
+	// Server
+	s ssh.Session
+
+	// Client
+	c ssh.Channel
+}
+
+func (gs *GitSpy) Write(p []byte) (n int, err error) {
+	return
+
+}
+
+func (gs *GitSpy) Read(p []byte) (n int, err error) {
+	return
+
+}
 
 func passwordCallback(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 	//log.Printf("Checking password for %v", c)
@@ -51,6 +70,11 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 
 	defer session.Close()
 
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("Failed to open stdin: %v", err)
+	}
+
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("Failed to open stdout: %v", err)
@@ -66,41 +90,80 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 		return fmt.Errorf("Failed to start command: %v", err)
 	}
 
+	// If I didn't care about spying
 	go func() {
-		for {
-			br := bufio.NewReader(stderr)
-			line, _, err := br.ReadLine()
-
-			if err != nil {
-				log.Printf("Failed to read: %v", err)
-				break
-			}
-
-			log.Printf("Error %s", line)
+		_, err := io.Copy(stdin, c)
+		if err != nil && err != io.EOF {
+			log.Fatalf("Failed to Copy to stdin: %v", err)
 		}
+
+		stdin.Close()
+
+		log.Printf("Closed stdin")
+
 		return
 	}()
 
 	go func() {
+		io.Copy(c, stdout)
+
+		if err != nil && err != io.EOF {
+			log.Fatalf("Failed to Copy to channel: %v", err)
+		}
+
+		// c.Close()
+		log.Printf("Channel copy complete")
+
+		return
+	}()
+
+	/*
 		for {
 			br := bufio.NewReader(stdout)
-			buf, err := br.Peek(4)
+			// TODO prefix
+			line, _, err := br.ReadLine()
 
-			if err != nil {
-				log.Printf("Failed to read: %v", err)
-				break
+			if len(line) > 0 {
+				log.Printf("Stdout %s", line)
+				n, err = stdin.Write(line)
+				if n != len(line) {
+					log.Fatalf("TODO: partial write")
+				}
+				if err != nil {
+					return fmt.Errorf("Failed to write")
+				}
 			}
 
-			log.Printf("Stdout %v", buf)
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("Failed to read: %v", err)
 
+				}
+				break
+			}
+		}
+	*/
+
+	serr := session.Wait()
+
+	for {
+		br := bufio.NewReader(stderr)
+		line, _, err := br.ReadLine()
+
+		if len(line) > 0 {
+			log.Printf("Error: %s", line)
+		}
+
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("Failed to read: %v", err)
+			}
 			break
 		}
-		return
-	}()
+	}
 
-	err = session.Wait()
-	if err != nil {
-		return fmt.Errorf("Command failed: %v", err)
+	if serr != nil {
+		return fmt.Errorf("Command failed: %v", serr)
 	}
 
 	return nil
@@ -122,6 +185,9 @@ func handleChannel(c ssh.Channel, r <-chan *ssh.Request) {
 				}
 
 				log.Printf("Wrote reply to channel")
+
+				// Nothing allowed after exec?
+				break
 			} else {
 				log.Printf("Unknown exec '%s' command, failing", p)
 				req.Reply(false, nil)
