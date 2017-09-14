@@ -2,6 +2,7 @@ package gitspy
 
 import (
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -56,7 +57,7 @@ func TestWritePktLineFlush(t *testing.T) {
 	}
 }
 
-func TestParsePktLineFlush(t *testing.T) {
+func TestParsePktLine(t *testing.T) {
 	l := []byte("000bfoobar\n0")
 
 	r := bytes.NewBuffer(l)
@@ -73,5 +74,33 @@ func TestParsePktLineFlush(t *testing.T) {
 
 	if bytes.Compare(b[0:n], []byte("foobar\n")) != 0 {
 		t.Errorf("Bad decode")
+	}
+}
+
+func TestParsePktLineFlush(t *testing.T) {
+	l := []byte("0000blahblah")
+
+	r := bytes.NewBuffer(l)
+	b := make([]byte, 25)
+
+	n, err := ParsePktLine(r, b)
+	if err != ErrFlushPkt {
+		t.Errorf("Should be a flush error: %v", err)
+	}
+
+	if n != 0 {
+		t.Errorf("Should be zero read")
+	}
+}
+
+func TestParsePktLineSmall(t *testing.T) {
+	l := []byte("000bfoobar\n0")
+
+	r := bytes.NewBuffer(l)
+	b := make([]byte, 2)
+
+	_, err := ParsePktLine(r, b)
+	if err != io.ErrShortBuffer {
+		t.Errorf("wrong error from parse: %v", err)
 	}
 }

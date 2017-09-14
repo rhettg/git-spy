@@ -71,7 +71,9 @@ func ParsePktLine(r io.Reader, b []byte) (n int, err error) {
 
 	hbs := binary.BigEndian.Uint16(db)
 
-	if hbs <= 4 {
+	if hbs == 0 {
+		return 0, ErrFlushPkt
+	} else if hbs <= 4 {
 		return 0, ErrInvalidSize
 	}
 
