@@ -55,3 +55,23 @@ func TestWritePktLineFlush(t *testing.T) {
 		t.Errorf("Wrong length")
 	}
 }
+
+func TestParsePktLineFlush(t *testing.T) {
+	l := []byte("000bfoobar\n0")
+
+	r := bytes.NewBuffer(l)
+	b := make([]byte, 25)
+
+	n, err := ParsePktLine(r, b)
+	if err != nil {
+		t.Errorf("Error from parse: %v", err)
+	}
+
+	if n != len(l)-5 {
+		t.Errorf("Failed to parse all bytes: %d", n)
+	}
+
+	if bytes.Compare(b[0:n], []byte("foobar\n")) != 0 {
+		t.Errorf("Bad decode")
+	}
+}
