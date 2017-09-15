@@ -80,6 +80,8 @@ func proxyUploadPack(c ssh.Channel, cmd string) (err error) {
 
 	serr := session.Wait()
 
+	gs.Close()
+
 	for {
 		br := bufio.NewReader(stderr)
 		line, _, err := br.ReadLine()
