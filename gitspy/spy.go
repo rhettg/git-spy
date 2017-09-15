@@ -74,7 +74,6 @@ func (gs *GitSpy) ServerPipe() io.WriteCloser {
 			}
 		}
 
-		//_, err := io.Copy(gs.c, r)
 		log.Printf("ServerPipe exited, closing client")
 		gs.c.Close()
 
